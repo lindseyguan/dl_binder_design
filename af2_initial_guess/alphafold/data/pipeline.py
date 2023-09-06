@@ -65,8 +65,7 @@ def make_msa_features(
       if sequence in seen_sequences:
         continue
       seen_sequences.add(sequence)
-      int_msa.append(
-          [residue_constants.HHBLITS_AA_TO_ID[res] for res in sequence])
+      int_msa.append([residue_constants.HHBLITS_AA_TO_ID[res] for res in sequence])
       deletion_matrix.append(deletion_matrices[msa_index][sequence_index])
 
   num_res = len(msas[0][0])

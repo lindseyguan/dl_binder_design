@@ -56,6 +56,7 @@ def generate_template_features(
 
     # Split the all atom positions and masks into a list of arrays for easier manipulation
     all_atom_positions = np.split(all_atom_positions, all_atom_positions.shape[0])
+
     all_atom_masks = np.split(all_atom_masks, all_atom_masks.shape[0])
 
     output_templates_sequence = []
@@ -303,3 +304,4 @@ def check_residue_distances(all_positions, all_positions_mask, max_amide_distanc
         prev_is_unmasked = this_is_unmasked
 
     return breaks
+    

@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+import pickle
 import sys
 
 from timeit import default_timer as timer
@@ -57,6 +58,8 @@ parser.add_argument( "-max_amide_dist", type=float, default=3.0, help='The maxim
 parser.add_argument( "-recycle", type=int, default=3, help='The number of AF2 recycles to perform (default: 3)' )
 parser.add_argument( "-no_initial_guess", action="store_true", default=False, help='When active, the model will not use an initial guess (default: False)' )
 parser.add_argument( "-force_monomer", action="store_true", default=False, help='When active, the model will predict the structure of a monomer (default: False)' )
+parser.add_argument( "-featuredir", type=str, default='', help="The name of a file where precomputed features are. If not an empty string, the MSAs will be created with these (default: '')" )
+
 
 args = parser.parse_args()
 
@@ -117,6 +120,8 @@ class AF2_runner():
 
         self.model_runner = model.RunModel(model_config, model_params)
 
+        self.featuredir = args.featuredir
+
     def featurize(self, feat_holder) -> None:
 
         all_atom_positions, all_atom_masks = af2_util.af2_get_atom_positions(feat_holder.pose, self.struct_manager.tmp_fn)
@@ -141,14 +146,36 @@ class AF2_runner():
                                                             feat_holder.residue_mask
                                                            )
         # Gather features
-        feature_dict = {
-            **pipeline.make_sequence_features(sequence=feat_holder.seq,
-                                            description="none",
-                                            num_res=len(feat_holder.seq)),
-            **pipeline.make_msa_features(msas=[[feat_holder.seq]],
-                                        deletion_matrices=[[[0]*len(feat_holder.seq)]]),
-            **template_dict
-        }
+        if self.featuredir == '':
+            feature_dict = {
+                **pipeline.make_sequence_features(sequence=feat_holder.seq,
+                                                description="none",
+                                                num_res=len(feat_holder.seq)),
+                **pipeline.make_msa_features(msas=[[feat_holder.seq]],
+                                            deletion_matrices=[[[0]*len(feat_holder.seq)]]),
+                **template_dict
+            }
+        else:
+            with open(self.featuredir, 'rb') as f:
+                precomputed_features = pickle.load(f)
+                msa = precomputed_features['msa']
+
+            res_msa = []
+            deletion_matrix = []
+            for sequence in msa:
+                # rearrange msa (which was generated with binder at the end)
+                seq_rearr = np.append(sequence[-feat_holder.binderlen:], sequence[0:-feat_holder.binderlen])
+                res_msa.append(''.join([residue_constants.ID_TO_HHBLITS_AA[res] for res in seq_rearr]))
+                deletion_matrix.append([0 for res in sequence])
+
+            feature_dict = {
+                **pipeline.make_sequence_features(sequence=feat_holder.seq,
+                                                description="none",
+                                                num_res=len(feat_holder.seq)),
+                **pipeline.make_msa_features(msas=[res_msa],
+                                             deletion_matrices=[deletion_matrix]),
+                **template_dict
+            }
 
         if feat_holder.monomer:
             breaks = []
@@ -160,7 +187,6 @@ class AF2_runner():
                         )
 
         feature_dict['residue_index'] = af2_util.insert_truncations(feature_dict['residue_index'], breaks)
-
         feature_dict = self.model_runner.process_features(feature_dict, random_seed=0)
 
         return feature_dict, initial_guess 
@@ -555,6 +581,6 @@ for pdb in struct_manager.iterate():
         except:
             seconds = int(timer() - t0)
             print( "Struct with tag %s failed in %i seconds with error: %s"%( pdb, seconds, sys.exc_info()[0] ) )
-
+        
     # We are done with one pdb, record that we finished
     struct_manager.record_checkpoint(pdb)
